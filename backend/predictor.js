@@ -180,8 +180,75 @@ async function generateBacktestSeries(prices, windowSize = 3) {
   return predictions;
 }
 
+/**
+ * Predicts the next N minutes of prices
+ * @param {string} symbol 
+ * @param {number} minutes 
+ */
+async function predictFutureSeries(symbol, minutes = 60) {
+  // Fetch last 60 minutes of data for context
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=100`;
+  let response;
+  if (global.fetch) {
+    response = await global.fetch(url);
+  } else {
+    const fetchModule = await import('node-fetch');
+    response = await fetchModule.default(url);
+  }
+  if (!response.ok) throw new Error('Failed to fetch historical data for future prediction');
+  const rawData = await response.json();
+  const prices = rawData.map(candle => parseFloat(candle[4]));
+  const lastTime = Math.floor(rawData[rawData.length - 1][0] / 1000);
+
+  // Train a simple model on the minute data
+  const windowSize = 5;
+  const maxPrice = Math.max(...prices);
+  const minPrice = Math.min(...prices);
+  const normalizedPrices = prices.map(p => (p - minPrice) / (maxPrice - minPrice));
+  
+  const { X, y } = prepareData(normalizedPrices, windowSize);
+  const xs = tf.tensor2d(X, [X.length, windowSize]);
+  const ys = tf.tensor2d(y, [y.length, 1]);
+
+  const model = tf.sequential();
+  model.add(tf.layers.dense({ units: 16, inputShape: [windowSize], activation: 'relu' }));
+  model.add(tf.layers.dense({ units: 8, activation: 'relu' }));
+  model.add(tf.layers.dense({ units: 1 }));
+  model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+  await model.fit(xs, ys, { epochs: 30, verbose: 0 });
+
+  const predictions = [];
+  let currentWindow = normalizedPrices.slice(-windowSize);
+
+  for (let i = 1; i <= minutes; i++) {
+    const input = tf.tensor2d([currentWindow], [1, windowSize]);
+    const predTensor = model.predict(input);
+    const normalizedPred = predTensor.dataSync()[0];
+    
+    const price = normalizedPred * (maxPrice - minPrice) + minPrice;
+    predictions.push({
+      time: lastTime + (i * 60),
+      value: price
+    });
+
+    // Update window for next step (recursive prediction)
+    currentWindow.shift();
+    currentWindow.push(normalizedPred);
+    
+    input.dispose();
+    predTensor.dispose();
+  }
+
+  xs.dispose();
+  ys.dispose();
+  model.dispose();
+
+  return predictions;
+}
+
 module.exports = {
   fetchHistoricalData,
   predictNextPrice,
-  generateBacktestSeries
+  generateBacktestSeries,
+  predictFutureSeries
 };

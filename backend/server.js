@@ -76,6 +76,25 @@ setInterval(fetchCryptoData, 3000);
 // Initial fetch
 fetchCryptoData();
 
+// --- Background Prediction Task ---
+// Periodically generate and save future predictions for the main symbol
+async function updateStoredPredictions() {
+  const mainSymbol = 'BTCUSDT'; // Focus on BTC for background tasks
+  try {
+    const futurePredictions = await predictor.predictFutureSeries(mainSymbol, 60);
+    for (const pred of futurePredictions) {
+      dbModule.savePrediction(mainSymbol, pred.value, pred.time);
+    }
+    console.log(`Generated and saved ${futurePredictions.length} predictions for ${mainSymbol}`);
+  } catch (error) {
+    console.error('Error in updateStoredPredictions:', error.message);
+  }
+}
+
+// Run every 5 minutes to keep the buffer full
+setInterval(updateStoredPredictions, 5 * 60 * 1000);
+updateStoredPredictions();
+
 // --- REST Endpoints for Phase 2 ---
 
 // Endpoint to get the last 24h of history
@@ -148,8 +167,20 @@ app.get('/api/chart/:symbol', async (req, res) => {
       time: d.time,
       value: predictions[i]
     })).filter(p => p.value !== null);
+
+    // Fetch actual future predictions from DB
+    // Range: now - 1 hour to now + 1 hour
+    const now = Math.floor(Date.now() / 1000);
+    const startTime = now - 3600;
+    const endTime = now + 3600;
+    const actualPredictions = await dbModule.getPredictions(symbol, startTime, endTime);
     
-    res.json({ symbol, data: formattedData, predictions: predictionData });
+    res.json({ 
+      symbol, 
+      data: formattedData, 
+      predictions: predictionData,
+      actualPredictions: actualPredictions
+    });
   } catch (error) {
     console.error('Chart Error:', error);
     res.status(500).json({ error: 'Failed to fetch chart data' });

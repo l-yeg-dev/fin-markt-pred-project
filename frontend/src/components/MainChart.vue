@@ -6,6 +6,20 @@
         <span class="chart-subtitle">4-Hour History (1m Candles)</span>
       </div>
       <div class="chart-actions">
+        <div class="line-toggles">
+          <label class="toggle-item">
+            <input type="checkbox" v-model="visibleLines.actual" @change="updateVisibility">
+            <span class="toggle-label" style="color: #3b82f6">Actual</span>
+          </label>
+          <label class="toggle-item">
+            <input type="checkbox" v-model="visibleLines.backtest" @change="updateVisibility">
+            <span class="toggle-label" style="color: #f59e0b">Back-test</span>
+          </label>
+          <label class="toggle-item">
+            <input type="checkbox" v-model="visibleLines.live" @change="updateVisibility">
+            <span class="toggle-label" style="color: #10b981">Live Prediction</span>
+          </label>
+        </div>
         <select v-model="symbol" class="symbol-selector" @change="loadChartData">
           <option value="BTCUSDT">Bitcoin (BTC)</option>
           <option value="ETHUSDT">Ethereum (ETH)</option>
@@ -38,9 +52,16 @@ const isPredicting = ref(false);
 let chart = null;
 let actualSeries = null;
 let predictionSeries = null;
+let actualPredictionSeries = null;
 let predictionLine = null;
 let socket = null;
 let latestPoint = null;
+
+const visibleLines = ref({
+  actual: true,
+  backtest: true,
+  live: true
+});
 
 onMounted(() => {
   initChart();
@@ -110,6 +131,15 @@ function initChart() {
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
 
+    // Live Prediction Series (Green)
+    actualPredictionSeries = chart.addLineSeries({
+      color: '#10b981',
+      lineWidth: 2,
+      lineStyle: 2, // Dashed for predictions
+      title: 'Live Prediction',
+      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+    });
+
   } catch (error) {
     console.error('Error initializing chart:', error);
   }
@@ -132,11 +162,24 @@ async function loadChartData() {
     actualSeries.setData(lineData);
     
     // Set prediction backtest data
-    predictionSeries.setData(json.predictions);
+    const backtestData = json.predictions.filter((v, i, a) => a.findIndex(t => t.time === v.time) === i);
+    predictionSeries.setData(backtestData);
+    
+    // Set actual future prediction data (Green)
+    const livePredictions = json.actualPredictions.filter((v, i, a) => a.findIndex(t => t.time === v.time) === i);
+    actualPredictionSeries.setData(livePredictions);
     
     if (lineData.length > 0) {
       latestPoint = { ...lineData[lineData.length - 1] };
     }
+
+    // Adjust time scale to show 1 hour into the future
+    const now = Math.floor(Date.now() / 1000);
+    chart.timeScale().setVisibleRange({
+      from: now - (4 * 3600), // 4 hours ago
+      to: now + 3600 // 1 hour future
+    });
+
   } catch (err) {
     console.error(err);
   }
@@ -194,6 +237,12 @@ async function fetchPrediction() {
     isPredicting.value = false;
   }
 }
+
+function updateVisibility() {
+  if (actualSeries) actualSeries.applyOptions({ visible: visibleLines.value.actual });
+  if (predictionSeries) predictionSeries.applyOptions({ visible: visibleLines.value.backtest });
+  if (actualPredictionSeries) actualPredictionSeries.applyOptions({ visible: visibleLines.value.live });
+}
 </script>
 
 <style scoped>
@@ -230,7 +279,34 @@ async function fetchPrediction() {
 
 .chart-actions {
   display: flex;
-  gap: 12px;
+  gap: 20px;
+  align-items: center;
+}
+
+.line-toggles {
+  display: flex;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.toggle-item input {
+  cursor: pointer;
+}
+
+.toggle-label {
+  user-select: none;
 }
 
 .symbol-selector {
