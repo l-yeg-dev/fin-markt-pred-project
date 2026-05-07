@@ -141,7 +141,7 @@ async function trainAndPredict(prices) {
  * @param {number} windowSize 
  * @returns {Promise<Array<number | null>>}
  */
-async function generateBacktestSeries(prices, windowSize = 3) {
+async function generateBacktestSeries(prices, windowSize = 5) {
   // Train once on the whole sequence to get the "trained" model
   const maxPrice = Math.max(...prices);
   const minPrice = Math.min(...prices);
@@ -154,10 +154,11 @@ async function generateBacktestSeries(prices, windowSize = 3) {
   const ys = tf.tensor2d(y, [y.length, 1]);
 
   const model = tf.sequential();
-  model.add(tf.layers.dense({ units: 8, inputShape: [windowSize], activation: 'relu' }));
+  model.add(tf.layers.dense({ units: 16, inputShape: [windowSize], activation: 'relu' }));
+  model.add(tf.layers.dense({ units: 8, activation: 'relu' }));
   model.add(tf.layers.dense({ units: 1 }));
   model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-  await model.fit(xs, ys, { epochs: 50, verbose: 0 });
+  await model.fit(xs, ys, { epochs: 30, verbose: 0 });
 
   // Now generate predictions for every window
   const predictions = new Array(prices.length).fill(null);
@@ -186,8 +187,8 @@ async function generateBacktestSeries(prices, windowSize = 3) {
  * @param {number} minutes 
  */
 async function predictFutureSeries(symbol, minutes = 60) {
-  // Fetch last 60 minutes of data for context
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=100`;
+  // Fetch last 240 minutes (4 hours) of data for context to match chart hindsight
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=240`;
   let response;
   if (global.fetch) {
     response = await global.fetch(url);

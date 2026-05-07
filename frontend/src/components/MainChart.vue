@@ -111,6 +111,17 @@ function initChart() {
       timeScale: {
         borderColor: 'rgba(255, 255, 255, 0.1)',
         timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (time, tickMarkType, locale) => {
+          const date = new Date(time * 1000);
+          return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+        },
+      },
+      localization: {
+        timeFormatter: (time) => {
+          const date = new Date(time * 1000);
+          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        },
       },
     });
 
